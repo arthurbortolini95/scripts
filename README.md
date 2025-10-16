@@ -7,8 +7,6 @@ This repository hosts a collection of reusable Bash scripts designed to streamli
 | Script            | Description                                                                                                                                            | Primary Use Case                                                                         |
 | :---------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------- |
 | **`snapshot.sh`** | **Code Snapshot Utility:** Recursively aggregates the content of specified files and directories into a single, structured text file (`snapshot.txt`). | Generating comprehensive project context for AI analysis, documentation, or code review. |
-| `backup.sh`       | (Placeholder) Archives and compresses essential project directories, excluding large/temporary files.                                                  | Quick, selective backups of development work.                                            |
-| `release.sh`      | (Placeholder) Automates version bumping, changelog generation, and Git tagging for a new release.                                                      | Standardizing and expediting the software release process.                               |
 
 ## Installation
 
