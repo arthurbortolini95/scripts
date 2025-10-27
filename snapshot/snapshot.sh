@@ -1,11 +1,13 @@
 #!/bin/bash
 
-# Define the output file name
+# Define the default output file name
 OUTPUT_FILE="snapshot.txt"
+OUTPUT_COMMAND=""
 
 # Initialize arrays for arguments
 DIRECTORIES=()
 FILES=()
+EXTENSIONS=()
 IGNORE_EXTENSIONS=()
 IGNORE_FILES=()
 IGNORE_DIRS=()
@@ -30,6 +32,32 @@ parse_args() {
                     FILES+=("$1")
                     shift
                 done
+                ;;
+            -e|--extension)
+                shift
+                while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
+                    # Prepend a dot for easier checking later
+                    EXTENSIONS+=(".$1")
+                    shift
+                done
+                ;;
+            -o|--output)
+                if [[ -n "$2" && ! "$2" =~ ^- ]]; then
+                    # Check if it looks like a command (contains special chars or is a known command)
+                    # or if it's an existing command in PATH, treat as command
+                    if [[ "$2" == *"|"* ]] || [[ "$2" == *">"* ]] || [[ "$2" == *"<"* ]] || [[ "$2" == *"&"* ]] || command -v "${2%% *}" >/dev/null 2>&1; then
+                        OUTPUT_COMMAND="$2"
+                        OUTPUT_FILE=""
+                    else
+                        # Treat as file path
+                        OUTPUT_FILE="$2"
+                        OUTPUT_COMMAND=""
+                    fi
+                    shift 2
+                else
+                    echo "Error: --output requires a value" >&2
+                    exit 1
+                fi
                 ;;
             -iext|--ignore-extensions)
                 shift
@@ -64,6 +92,12 @@ parse_args() {
                 ;;
         esac
     done
+
+    # Validate that -e/--extension is used with -d/--directory
+    if [ ${#EXTENSIONS[@]} -gt 0 ] && [ ${#DIRECTORIES[@]} -eq 0 ]; then
+        echo "Error: --extension (-e) can only be used with --directory (-d)" >&2
+        exit 1
+    fi
 }
 
 # --- Helper Functions ---
@@ -73,11 +107,22 @@ print_help() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
     echo "Takes a snapshot of files from specified directories and/or files."
-    echo "The output is written to '$OUTPUT_FILE' in the current directory."
+    echo "By default, output is written to 'snapshot.txt' in the current directory."
+    echo "The output file itself is automatically excluded from processing."
     echo ""
     echo "Mandatory (at least one of -d or -f must be provided):"
     echo "  -d, --directory <dir1> [dir2]...    : One or more directories to include."
     echo "  -f, --file <file1> [file2]...       : One or more specific files to include."
+    echo ""
+    echo "Optional Output:"
+    echo "  -o, --output <file_or_command>      : Output file path or command to pipe to."
+    echo "                                        If not provided, defaults to 'snapshot.txt'."
+    echo "                                        Examples: 'output.txt' or 'pbcopy' or 'less'"
+    echo ""
+    echo "Optional Filtering:"
+    echo "  -e, --extension <ext1> [ext2]...    : File extensions to include (e.g., ts js json)."
+    echo "                                        Can only be used with --directory (-d)."
+    echo "                                        If not specified, all files are included."
     echo ""
     echo "Optional Exclusion Filters:"
     echo "  -iext, --ignore-extensions <ext1>...: One or more file extensions to ignore (e.g., ts js)."
@@ -136,26 +181,60 @@ process_file() {
         return
     fi
 
-    # Output the required format to the snapshot file
-    {
-        echo "# FILE PATH: $file_path"
-        echo "# CONTENT:"
-        echo "{{"
-        # Use cat to output file content directly
-        cat "$file_path"
-        echo "" # Ensure a newline after content
-        echo "}}"
-        echo ""
-        echo "# END OF FILE"
-        echo ""
-    } >> "$OUTPUT_FILE"
+    # Skip the output file if it's being used for file output
+    if [[ -n "$OUTPUT_FILE" ]]; then
+        local abs_output_file=$(realpath "$OUTPUT_FILE" 2>/dev/null || echo "$OUTPUT_FILE")
+        local abs_file_path=$(realpath "$file_path" 2>/dev/null || echo "$file_path")
+        if [[ "$abs_file_path" == "$abs_output_file" ]]; then
+            return
+        fi
+    fi
+
+    # Check extension filtering (only for directory processing)
+    if [[ ${#EXTENSIONS[@]} -gt 0 && "$2" == "from_directory" ]]; then
+        local extension="${file_path##*.}"
+        local full_extension=".${extension}"
+        local matches_extension=false
+        for allowed_ext in "${EXTENSIONS[@]}"; do
+            if [[ "$full_extension" == "$allowed_ext" ]]; then
+                matches_extension=true
+                break
+            fi
+        done
+        if [[ "$matches_extension" == false ]]; then
+            return
+        fi
+    fi
+
+    # Output the required format
+    local content=$(cat <<EOF
+# FILE PATH: $file_path
+# CONTENT:
+{{
+$(cat "$file_path")
+
+}}
+
+# END OF FILE
+
+EOF
+)
+
+    # Send output to file or command
+    if [[ -n "$OUTPUT_COMMAND" ]]; then
+        echo "$content" | eval "$OUTPUT_COMMAND"
+    else
+        echo "$content" >> "$OUTPUT_FILE"
+    fi
 }
 
 # --- Main Logic ---
 
 main() {
-    # Clear the output file before starting
-    > "$OUTPUT_FILE"
+    # Clear the output file before starting (only if using file output)
+    if [[ -n "$OUTPUT_FILE" ]]; then
+        > "$OUTPUT_FILE"
+    fi
 
     if [ ${#DIRECTORIES[@]} -eq 0 ] && [ ${#FILES[@]} -eq 0 ]; then
         echo "Error: You must provide at least one directory (-d) or one file (-f)." >&2
@@ -164,11 +243,19 @@ main() {
     fi
 
     echo "--- Snapshot generation started ---"
-    echo "Output file: $OUTPUT_FILE"
+    if [[ -n "$OUTPUT_COMMAND" ]]; then
+        echo "Output command: $OUTPUT_COMMAND"
+    else
+        echo "Output file: $OUTPUT_FILE"
+    fi
+
+    if [[ ${#EXTENSIONS[@]} -gt 0 ]]; then
+        echo "Filtering by extensions: ${EXTENSIONS[*]}"
+    fi
 
     # 1. Process files explicitly provided with -f
     for file_path in "${FILES[@]}"; do
-        process_file "$file_path"
+        process_file "$file_path" "from_file"
     done
 
     # 2. Process files found in directories provided with -d
@@ -184,12 +271,14 @@ main() {
         while IFS= read -r -d $'\0' file; do
             # The find command may return a relative path, so we normalize it if needed
             # In most cases, find returns './file' or 'dir/file'
-            process_file "$file"
+            process_file "$file" "from_directory"
         done < <(find "$dir_path" -type f -print0 2>/dev/null)
     done
 
     echo "--- Snapshot generation complete ---"
-    echo "Total lines in snapshot: $(wc -l < "$OUTPUT_FILE")"
+    if [[ -n "$OUTPUT_FILE" ]]; then
+        echo "Total lines in snapshot: $(wc -l < "$OUTPUT_FILE")"
+    fi
 }
 
 # Run the argument parsing with all provided script arguments
