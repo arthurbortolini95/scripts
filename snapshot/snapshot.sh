@@ -3,6 +3,7 @@
 # Define the default output file name
 OUTPUT_FILE="snapshot.txt"
 OUTPUT_COMMAND=""
+COMMAND_OUTPUT_TEMPFILE=""
 
 # Initialize arrays for arguments
 DIRECTORIES=()
@@ -101,6 +102,16 @@ parse_args() {
 }
 
 # --- Helper Functions ---
+
+# Cleanup function for temporary files
+cleanup() {
+    if [[ -n "$COMMAND_OUTPUT_TEMPFILE" && -f "$COMMAND_OUTPUT_TEMPFILE" ]]; then
+        rm -f "$COMMAND_OUTPUT_TEMPFILE"
+    fi
+}
+
+# Set trap to cleanup on exit
+trap cleanup EXIT INT TERM
 
 # Function to display usage help
 print_help() {
@@ -222,7 +233,11 @@ EOF
 
     # Send output to file or command
     if [[ -n "$OUTPUT_COMMAND" ]]; then
-        echo "$content" | eval "$OUTPUT_COMMAND"
+        # For command output, write to temporary file
+        if [[ -z "$COMMAND_OUTPUT_TEMPFILE" ]]; then
+            COMMAND_OUTPUT_TEMPFILE=$(mktemp)
+        fi
+        echo "$content" >> "$COMMAND_OUTPUT_TEMPFILE"
     else
         echo "$content" >> "$OUTPUT_FILE"
     fi
@@ -276,7 +291,14 @@ main() {
     done
 
     echo "--- Snapshot generation complete ---"
-    if [[ -n "$OUTPUT_FILE" ]]; then
+    
+    # If using command output, pipe all content from temp file and clean up
+    if [[ -n "$OUTPUT_COMMAND" ]]; then
+        if [[ -n "$COMMAND_OUTPUT_TEMPFILE" && -f "$COMMAND_OUTPUT_TEMPFILE" ]]; then
+            cat "$COMMAND_OUTPUT_TEMPFILE" | eval "$OUTPUT_COMMAND"
+            rm -f "$COMMAND_OUTPUT_TEMPFILE"
+        fi
+    else
         echo "Total lines in snapshot: $(wc -l < "$OUTPUT_FILE")"
     fi
 }
