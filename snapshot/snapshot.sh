@@ -23,7 +23,7 @@ PROCESSED_FILES=()
 
 parse_args() {
     # Set default ignores (extensible)
-    IGNORE_DIRS+=("node_modules" ".git")
+    IGNORE_DIRS+=("node_modules" ".git" "package-lock.json" "yarn.lock" "pnpm-lock.yaml")
     
     while (( "$#" )); do
         case "$1" in
@@ -63,17 +63,19 @@ parse_args() {
                     shift
                 done
                 ;;
-            -ifile|--ignore-files)
+            -i|--ignore)
                 shift
                 while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
-                    IGNORE_FILES+=("$1")
-                    shift
-                done
-                ;;
-            -idir|--ignore-directories)
-                shift
-                while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
-                    IGNORE_DIRS+=("$1")
+                    # Auto-detect if it's a directory or file
+                    if [[ -d "$1" ]]; then
+                        IGNORE_DIRS+=("$1")
+                    elif [[ "$1" == */ ]]; then
+                        # Ends with slash, treat as directory
+                        IGNORE_DIRS+=("${1%/}")
+                    else
+                        # Treat as file pattern
+                        IGNORE_FILES+=("$1")
+                    fi
                     shift
                 done
                 ;;
@@ -164,9 +166,8 @@ print_help() {
     echo "                                        If not specified, all files are included."
     echo ""
     echo "Optional Exclusion Filters (extensible defaults: node_modules, .git, output file):"
-    echo "  -iext, --ignore-extensions <ext1>...: One or more file extensions to ignore (e.g., ts js)."
-    echo "  -ifile, --ignore-files <file1>...   : One or more specific files to ignore."
-    echo "  -idir, --ignore-directories <dir1>..: One or more directories to ignore."
+    echo "  -i, --ignore <path1> [path2]...     : Files or directories to ignore (auto-detected)."
+    echo "  -iext, --ignore-extensions <ext1>...: File extensions to ignore (e.g., ts js log)."
     echo ""
     echo "Git Integration:"
     echo "  --diff [args]                       : Include git diff for processed files only."
@@ -180,10 +181,15 @@ print_help() {
 # Function to check if a file path or directory should be ignored
 is_ignored() {
     local path="$1"
+    local basename_path=$(basename "$path")
 
-    # Check for ignored files (full path match)
+    # Check for ignored files (full path match or basename match)
     for ignored_file in "${IGNORE_FILES[@]}"; do
-        if [[ "$path" == "$ignored_file" ]]; then
+        if [[ "$path" == "$ignored_file" || "$basename_path" == "$ignored_file" ]]; then
+            return 0 # True (is ignored)
+        fi
+        # Also check if path ends with the ignored file pattern
+        if [[ "$path" == */"$ignored_file" ]]; then
             return 0 # True (is ignored)
         fi
     done
@@ -193,7 +199,7 @@ is_ignored() {
     for ignored_dir in "${IGNORE_DIRS[@]}"; do
         # Note: This checks if the path *contains* the ignored directory path component
         # This is a common and robust way to check for directory exclusion in a full path.
-        if [[ "$path" == "$ignored_dir" ]] || [[ "$path" == "$ignored_dir/"* ]]; then
+        if [[ "$path" == "$ignored_dir" ]] || [[ "$path" == "$ignored_dir/"* ]] || [[ "$path" == */"$ignored_dir" ]] || [[ "$path" == */"$ignored_dir/"* ]]; then
             return 0 # True (is ignored)
         fi
     done

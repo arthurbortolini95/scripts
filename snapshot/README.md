@@ -45,15 +45,14 @@ A versatile Bash script to collect and format the content of files and directori
 
 ## Options
 
-| Flag (Short/Long)             | Argument             | Description                                                                                 |
-| :---------------------------- | :------------------- | :------------------------------------------------------------------------------------------ |
-| `-o, --output`                | `<file_or_command>`  | Output file path or command to pipe to. Default: timestamped file in `snapshots/`           |
-| `-e, --extension`             | `<ext1> [ext2]...`   | Only include files with these extensions (e.g., `ts`, `json`). Applies to directories only. |
-| `-iext, --ignore-extensions`  | `<ext1> [ext2]...`   | File extensions to ignore (e.g., `png`, `zip`, `log`).                                      |
-| `-ifile, --ignore-files`      | `<file1> [file2]...` | Specific files to ignore by name.                                                           |
-| `-idir, --ignore-directories` | `<dir1> [dir2]...`   | Directories to ignore (e.g., `build`, `dist`).                                              |
-| `--diff [args]`               | `<git-diff-args>`    | Include git diff for processed files. Accepts git diff arguments.                           |
-| `-h, --help`                  |                      | Display the help message and exit.                                                          |
+| Flag (Short/Long)            | Argument             | Description                                                                                 |
+| :--------------------------- | :------------------- | :------------------------------------------------------------------------------------------ |
+| `-o, --output`               | `<file_or_command>`  | Output file path or command to pipe to. Default: timestamped file in `snapshots/`           |
+| `-e, --extension`            | `<ext1> [ext2]...`   | Only include files with these extensions (e.g., `ts`, `json`). Applies to directories only. |
+| `-i, --ignore`               | `<path1> [path2]...` | Files or directories to ignore (auto-detected).                                             |
+| `-iext, --ignore-extensions` | `<ext1> [ext2]...`   | File extensions to ignore (e.g., `png`, `zip`, `log`).                                      |
+| `--diff [args]`              | `<git-diff-args>`    | Include git diff for processed files. Accepts git diff arguments.                           |
+| `-h, --help`                 |                      | Display the help message and exit.                                                          |
 
 ### Default Ignores
 
@@ -105,11 +104,11 @@ dist/
 # Only TypeScript and JSON files
 ./snapshot.sh src -e ts json
 
-# Ignore specific files
-./snapshot.sh . -ifile package-lock.json
+# Ignore specific files and directories (auto-detected)
+./snapshot.sh . -i package-lock.json build dist node_modules
 
-# Ignore directories
-./snapshot.sh . -idir build dist coverage
+# Ignore with trailing slash for directories
+./snapshot.sh . -i build/ dist/ coverage/
 
 # Ignore extensions
 ./snapshot.sh . -iext log tmp cache
@@ -151,10 +150,10 @@ dist/
 
 ```bash
 # TypeScript files with diff vs main, excluding tests
-./snapshot.sh src -e ts tsx --diff main -idir __tests__
+./snapshot.sh src -e ts tsx --diff main -i __tests__
 
 # Snapshot with custom ignores
-./snapshot.sh . -idir node_modules build dist -iext log tmp -o context.txt
+./snapshot.sh . -i node_modules build dist -iext log tmp -o context.txt
 ```
 
 ## Output Format
