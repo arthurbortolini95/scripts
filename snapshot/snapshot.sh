@@ -13,6 +13,9 @@ EXTENSIONS=()
 IGNORE_EXTENSIONS=()
 IGNORE_FILES=()
 IGNORE_DIRS=()
+DIFF_ENABLED=false
+DIFF_ARGS=()
+PROCESSED_FILES=()
 
 # --- Argument Parsing ---
 # Parse flags and positional arguments
@@ -71,6 +74,15 @@ parse_args() {
                 shift
                 while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
                     IGNORE_DIRS+=("$1")
+                    shift
+                done
+                ;;
+            --diff)
+                DIFF_ENABLED=true
+                shift
+                # Collect all non-flag arguments as diff arguments
+                while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
+                    DIFF_ARGS+=("$1")
                     shift
                 done
                 ;;
@@ -155,6 +167,13 @@ print_help() {
     echo "  -iext, --ignore-extensions <ext1>...: One or more file extensions to ignore (e.g., ts js)."
     echo "  -ifile, --ignore-files <file1>...   : One or more specific files to ignore."
     echo "  -idir, --ignore-directories <dir1>..: One or more directories to ignore."
+    echo ""
+    echo "Git Integration:"
+    echo "  --diff [args]                       : Include git diff for processed files only."
+    echo "                                        Accepts same arguments as 'git diff':"
+    echo "                                        --diff              (unstaged changes)"
+    echo "                                        --diff main         (diff vs branch)"
+    echo "                                        --diff abc123..def  (diff range)"
     echo "  -h, --help                          : Display this help message."
 }
 
@@ -208,6 +227,9 @@ process_file() {
         return
     fi
 
+    # Track this file as processed for git diff
+    PROCESSED_FILES+=("$file_path")
+
     # Skip the output file if it's being used for file output
     if [[ -n "$OUTPUT_FILE" ]]; then
         local abs_output_file=$(realpath "$OUTPUT_FILE" 2>/dev/null || echo "$OUTPUT_FILE")
@@ -233,16 +255,49 @@ process_file() {
         fi
     fi
 
+    # Generate git diff for this file if --diff flag is enabled
+    local diff_section=""
+    if [[ "$DIFF_ENABLED" == true ]]; then
+        # Check if we're in a git repository
+        if git rev-parse --git-dir > /dev/null 2>&1; then
+            # Build git diff command for this specific file
+            local git_cmd="git diff"
+            
+            # Add diff arguments if provided
+            if [ ${#DIFF_ARGS[@]} -gt 0 ]; then
+                git_cmd="$git_cmd ${DIFF_ARGS[*]}"
+            fi
+            
+            # Add -- separator and this file
+            git_cmd="$git_cmd -- \"$file_path\""
+            
+            # Execute git diff
+            local diff_output
+            diff_output=$(eval "$git_cmd" 2>&1)
+            
+            if [ -n "$diff_output" ]; then
+                diff_section=$(cat <<EOF
+<diff>
+$diff_output
+</diff>
+
+EOF
+)
+            fi
+        fi
+    fi
+
     # Output the required format
     local content=$(cat <<EOF
-# FILE PATH: $file_path
-# CONTENT:
-{{
+<file>
+<path>
+$file_path
+</path>
+$diff_section
+<content>
 $(cat "$file_path")
-
-}}
-
-# END OF FILE
+</content>
+</file>
 
 EOF
 )
