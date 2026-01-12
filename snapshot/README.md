@@ -1,72 +1,175 @@
 # Code Snapshot Utility
 
-A versatile Bash script to collect and format the content of selected directories and files into a single, structured text file (`snapshot.txt`) or pipe the output to a command. This output is ideal for sharing code context with AI models or for documentation.
+A versatile Bash script to collect and format the content of files and directories into a single, structured XML file. Perfect for sharing code context with AI models or for documentation.
+
+## Features
+
+- **Simple positional arguments** - Just `snapshot.sh .` to snapshot current directory
+- **Auto-detection** - Automatically detects files vs directories
+- **XML output format** - Clean, LLM-friendly structure with `<file>`, `<path>`, `<content>` tags
+- **Git diff integration** - Include diffs alongside file contents with `--diff`
+- **Smart ignoring** - Default ignores for `node_modules`, `.git`, plus custom `.snapshotignore` support
+- **Extensible filtering** - Include/exclude by extension, file, or directory
+- **Flexible output** - Write to file, pipe to commands (`pbcopy`, `less`), or use default timestamped files
+
+## Quick Start
+
+```bash
+# Snapshot current directory
+./snapshot.sh .
+
+# Snapshot specific files and folders
+./snapshot.sh src package.json README.md
+
+# Snapshot with git diff
+./snapshot.sh . --diff
+
+# Snapshot changes vs main branch
+./snapshot.sh src --diff main
+
+# Copy to clipboard (macOS)
+./snapshot.sh src -o pbcopy
+```
 
 ## Usage
 
 ```bash
-./snapshot.sh [OPTIONS]
+./snapshot.sh <path1> [path2] ... [OPTIONS]
 ```
 
-At least one of the inclusion flags (`-d` or `-f`) must be provided.
+**Arguments:**
+
+- `<path1> [path2] ...` - Files and/or directories to include (auto-detected)
 
 ## Options
 
-| Flag (Short/Long)             | Argument             | Description                                                             |
-| :---------------------------- | :------------------- | :---------------------------------------------------------------------- |
-| `-d, --directory`             | `<dir1> [dir2]...`   | One or more directories to include **recursively**.                     |
-| `-f, --file`                  | `<file1> [file2]...` | One or more specific files to include.                                  |
-| `-e, --extension`             | `<ext1> [ext2]...`   | Only include files with these extensions (e.g., `ts`, `json`). Must be used with `-d`. |
-| `-o, --output`                | `<file_or_command>`  | Output file path or command to pipe to (e.g., `pbcopy`, `less`).        |
-| `-iext, --ignore-extensions`  | `<ext1> [ext2]...`   | File extensions to ignore (e.g., `png`, `zip`, `log`, `ts`).            |
-| `-ifile, --ignore-files`      | `<file1> [file2]...` | Specific files to ignore by full path/name (e.g., `package-lock.json`). |
-| `-idir, --ignore-directories` | `<dir1> [dir2]...`   | Directories to ignore (e.g., `node_modules`, `.git`, `dist`).           |
-| `-h, --help`                  |                      | Display the help message and exit.                                      |
+## Options
 
-### Output File Exclusion
-- The output file (default `snapshot.txt` or custom file via `-o`) is automatically excluded from processing.
-- When using command output (e.g., `-o pbcopy`), no file exclusion is needed.
+| Flag (Short/Long)             | Argument             | Description                                                                                 |
+| :---------------------------- | :------------------- | :------------------------------------------------------------------------------------------ |
+| `-o, --output`                | `<file_or_command>`  | Output file path or command to pipe to. Default: timestamped file in `snapshots/`           |
+| `-e, --extension`             | `<ext1> [ext2]...`   | Only include files with these extensions (e.g., `ts`, `json`). Applies to directories only. |
+| `-iext, --ignore-extensions`  | `<ext1> [ext2]...`   | File extensions to ignore (e.g., `png`, `zip`, `log`).                                      |
+| `-ifile, --ignore-files`      | `<file1> [file2]...` | Specific files to ignore by name.                                                           |
+| `-idir, --ignore-directories` | `<dir1> [dir2]...`   | Directories to ignore (e.g., `build`, `dist`).                                              |
+| `--diff [args]`               | `<git-diff-args>`    | Include git diff for processed files. Accepts git diff arguments.                           |
+| `-h, --help`                  |                      | Display the help message and exit.                                                          |
+
+### Default Ignores
+
+The script automatically ignores:
+
+- `node_modules/`
+- `.git/`
+- `snapshots/` (output directory)
+- Output file
+
+### .snapshotignore Support
+
+Create a `.snapshotignore` file at your repository root to define custom ignore patterns:
+
+```gitignore
+# Comments and blank lines are ignored
+
+# Ignore specific files
+test.txt
+.env
+
+# Ignore directories (trailing slash optional)
+build/
+dist/
+
+# Ignore extensions
+*.log
+*.tmp
+```
 
 ## Examples
 
-Generate a snapshot of the current directory, explicitly including `my-config.yaml`, while ignoring build outputs, node dependencies, and log files:
+### Basic Usage
 
 ```bash
-./snapshot.sh \
-  -d . \
-  -f my-config.yaml \
-  -idir node_modules dist \
-  -iext log sh
+# Snapshot current directory (creates snapshots/scripts_YYYYMMDD_HHMMSS.txt)
+./snapshot.sh .
+
+# Snapshot specific directory
+./snapshot.sh src
+
+# Snapshot multiple paths
+./snapshot.sh src tests package.json
 ```
 
-Filter only TypeScript and JSON files from a directory:
+### Filtering
+
 ```bash
-./snapshot.sh -d src/ -e ts json
+# Only TypeScript and JSON files
+./snapshot.sh src -e ts json
+
+# Ignore specific files
+./snapshot.sh . -ifile package-lock.json
+
+# Ignore directories
+./snapshot.sh . -idir build dist coverage
+
+# Ignore extensions
+./snapshot.sh . -iext log tmp cache
 ```
 
-Pipe output to clipboard (macOS):
+### Git Integration
+
 ```bash
-./snapshot.sh -d src/ -e ts -o pbcopy
+# Include unstaged changes
+./snapshot.sh src --diff
+
+# Diff against main branch
+./snapshot.sh . --diff main
+
+# Diff between commits
+./snapshot.sh src --diff abc123..def456
+
+# Diff staged changes
+./snapshot.sh . --diff --staged
 ```
 
-Pipe output to a pager:
+### Output Options
+
 ```bash
-./snapshot.sh -d . -o less
+# Custom output file
+./snapshot.sh src -o my-snapshot.txt
+
+# Pipe to clipboard (macOS)
+./snapshot.sh src -o pbcopy
+
+# Pipe to pager
+./snapshot.sh . -o less
+
+# Pipe to another command
+./snapshot.sh src -e ts tsx -o "grep -v 'test'"
 ```
 
-Write output to a custom file:
+### Combined Examples
+
 ```bash
-./snapshot.sh -d src/ -e ts tsx -o my-code.txt
+# TypeScript files with diff vs main, excluding tests
+./snapshot.sh src -e ts tsx --diff main -idir __tests__
+
+# Snapshot with custom ignores
+./snapshot.sh . -idir node_modules build dist -iext log tmp -o context.txt
 ```
 
 ## Output Format
 
-The output is always written to `snapshot.txt` (or the specified output) in the following structured format, designed for machine readability:
+The output uses clean XML tags optimized for LLM understanding:
 
-```
-# FILE PATH: src/components/Button.tsx
-# CONTENT:
-{{
+**Without git diff:**
+
+```xml
+<file>
+<path>
+src/components/Button.tsx
+</path>
+
+<content>
 import React from 'react';
 
 const Button = ({ children }) => (
@@ -74,18 +177,54 @@ const Button = ({ children }) => (
 );
 
 export default Button;
-}}
+</content>
+</file>
+```
 
-# END OF FILE
+**With git diff:**
 
-# FILE PATH: package.json
-# CONTENT:
-{{
-{
-  "name": "my-project",
-  "version": "1.0.0"
+```xml
+<file>
+<path>
+src/utils/helper.ts
+</path>
+<diff>
+diff --git a/src/utils/helper.ts b/src/utils/helper.ts
+index 1234567..abcdefg 100644
+--- a/src/utils/helper.ts
++++ b/src/utils/helper.ts
+@@ -1,3 +1,4 @@
+ export function helper() {
+-  return 'old';
++  // Updated implementation
++  return 'new';
+ }
+</diff>
+
+<content>
+export function helper() {
+  // Updated implementation
+  return 'new';
 }
-}}
+</content>
+</file>
+```
 
-# END OF FILE
+## How It Works
+
+1. **Auto-setup**: Creates `snapshots/` directory at git repository root (added to `.gitignore`)
+2. **Smart detection**: Distinguishes files from directories automatically
+3. **Default naming**: Generates timestamped files like `<repo-name>_20260112_143022.txt`
+4. **Ignore patterns**: Loads `.snapshotignore` from repo root, applies default ignores
+5. **Processing**: Recursively processes directories, formats each file with XML tags
+6. **Git integration**: Optionally includes diffs for only the processed files
+
+## Installation
+
+```bash
+# Clone or download the script
+chmod +x snapshot.sh
+
+# Optional: Add to PATH
+sudo ln -s $(pwd)/snapshot.sh /usr/local/bin/snapshot
 ```
