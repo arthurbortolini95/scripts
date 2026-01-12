@@ -18,6 +18,9 @@ IGNORE_DIRS=()
 # Based on a common pattern for handling variable-length arguments with flags
 
 parse_args() {
+    # Set default ignores (extensible)
+    IGNORE_DIRS+=("node_modules" ".git")
+    
     while (( "$#" )); do
         case "$1" in
             -d|--directory)
@@ -53,6 +56,8 @@ parse_args() {
                         # Treat as file path
                         OUTPUT_FILE="$2"
                         OUTPUT_COMMAND=""
+                        # Add output file to ignore list
+                        IGNORE_FILES+=("$OUTPUT_FILE")
                     fi
                     shift 2
                 else
@@ -93,6 +98,11 @@ parse_args() {
                 ;;
         esac
     done
+
+    # Add default output file to ignore list if using file output
+    if [[ -n "$OUTPUT_FILE" ]]; then
+        IGNORE_FILES+=("$OUTPUT_FILE")
+    fi
 
     # Validate that -e/--extension is used with -d/--directory
     if [ ${#EXTENSIONS[@]} -gt 0 ] && [ ${#DIRECTORIES[@]} -eq 0 ]; then
