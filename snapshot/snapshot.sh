@@ -8,14 +8,15 @@ COMMAND_OUTPUT_TEMPFILE=""
 # Initialize arrays for arguments
 DIRECTORIES=()
 FILES=()
+POSITIONAL_ARGS=()
 EXTENSIONS=()
 IGNORE_EXTENSIONS=()
 IGNORE_FILES=()
 IGNORE_DIRS=()
 
 # --- Argument Parsing ---
-# Use getopts-style parsing for long and short arguments
-# Based on a common pattern for handling variable-length arguments with flags
+# Parse flags and positional arguments
+# Positional arguments are auto-detected as files or directories
 
 parse_args() {
     # Set default ignores (extensible)
@@ -23,20 +24,6 @@ parse_args() {
     
     while (( "$#" )); do
         case "$1" in
-            -d|--directory)
-                shift
-                while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
-                    DIRECTORIES+=("$1")
-                    shift
-                done
-                ;;
-            -f|--file)
-                shift
-                while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
-                    FILES+=("$1")
-                    shift
-                done
-                ;;
             -e|--extension)
                 shift
                 while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
@@ -92,11 +79,29 @@ parse_args() {
                 exit 0
                 ;;
             *)
-                echo "Error: Unknown argument '$1'" >&2
-                print_help
-                exit 1
+                # Treat as positional argument (file or directory)
+                if [[ ! "$1" =~ ^- ]]; then
+                    POSITIONAL_ARGS+=("$1")
+                    shift
+                else
+                    echo "Error: Unknown argument '$1'" >&2
+                    print_help
+                    exit 1
+                fi
                 ;;
         esac
+    done
+
+    # Process positional arguments and categorize them as files or directories
+    for arg in "${POSITIONAL_ARGS[@]}"; do
+        if [[ -d "$arg" ]]; then
+            DIRECTORIES+=("$arg")
+        elif [[ -f "$arg" ]]; then
+            FILES+=("$arg")
+        else
+            echo "Error: Path not found or inaccessible: $arg" >&2
+            exit 1
+        fi
     done
 
     # Add default output file to ignore list if using file output
@@ -104,9 +109,9 @@ parse_args() {
         IGNORE_FILES+=("$OUTPUT_FILE")
     fi
 
-    # Validate that -e/--extension is used with -d/--directory
+    # Validate that -e/--extension is used with directories
     if [ ${#EXTENSIONS[@]} -gt 0 ] && [ ${#DIRECTORIES[@]} -eq 0 ]; then
-        echo "Error: --extension (-e) can only be used with --directory (-d)" >&2
+        echo "Error: --extension (-e) can only be used when processing directories" >&2
         exit 1
     fi
 }
@@ -125,15 +130,16 @@ trap cleanup EXIT INT TERM
 
 # Function to display usage help
 print_help() {
-    echo "Usage: $0 [OPTIONS]"
+    echo "Usage: $0 <path1> [path2] ... [OPTIONS]"
     echo ""
-    echo "Takes a snapshot of files from specified directories and/or files."
+    echo "Takes a snapshot of files from specified paths (files and/or directories)."
     echo "By default, output is written to 'snapshot.txt' in the current directory."
     echo "The output file itself is automatically excluded from processing."
     echo ""
-    echo "Mandatory (at least one of -d or -f must be provided):"
-    echo "  -d, --directory <dir1> [dir2]...    : One or more directories to include."
-    echo "  -f, --file <file1> [file2]...       : One or more specific files to include."
+    echo "Arguments:"
+    echo "  <path1> [path2] ...                 : One or more files or directories to include."
+    echo "                                        Paths are automatically detected as files or directories."
+    echo "                                        Examples: 'snapshot.sh .' or 'snapshot.sh src package.json'"
     echo ""
     echo "Optional Output:"
     echo "  -o, --output <file_or_command>      : Output file path or command to pipe to."
@@ -142,10 +148,10 @@ print_help() {
     echo ""
     echo "Optional Filtering:"
     echo "  -e, --extension <ext1> [ext2]...    : File extensions to include (e.g., ts js json)."
-    echo "                                        Can only be used with --directory (-d)."
+    echo "                                        Only applies to directories."
     echo "                                        If not specified, all files are included."
     echo ""
-    echo "Optional Exclusion Filters:"
+    echo "Optional Exclusion Filters (extensible defaults: node_modules, .git, output file):"
     echo "  -iext, --ignore-extensions <ext1>...: One or more file extensions to ignore (e.g., ts js)."
     echo "  -ifile, --ignore-files <file1>...   : One or more specific files to ignore."
     echo "  -idir, --ignore-directories <dir1>..: One or more directories to ignore."
@@ -262,7 +268,7 @@ main() {
     fi
 
     if [ ${#DIRECTORIES[@]} -eq 0 ] && [ ${#FILES[@]} -eq 0 ]; then
-        echo "Error: You must provide at least one directory (-d) or one file (-f)." >&2
+        echo "Error: You must provide at least one file or directory path." >&2
         print_help
         exit 1
     fi
